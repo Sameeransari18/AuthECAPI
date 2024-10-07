@@ -1,56 +1,42 @@
+using AuthECAPI.Controllers;
+using AuthECAPI.Extensions;
 using AuthECAPI.Models;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
 
-// Service from the Identity Core
+// Using Extension Method's
+
 builder.Services
-    .AddIdentityApiEndpoints<AppUser>()    // Used for the Endpoints
-    .AddEntityFrameworkStores<AppDbContext>();  // Used for the Db tables
-
-// Included the DbContext DI
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DevDB")));
-
-// Customising the User Identity Validations
-builder.Services.Configure<IdentityOptions>(options =>
-    {
-        options.Password.RequireDigit = false;
-        options.Password.RequireUppercase = false;
-        options.Password.RequireLowercase = false;
-        options.User.RequireUniqueEmail = false;
-    });
+    .AddSwaggerExplorer() // Injecting the SwaggerAPI and SwaggerExplorer
+    .InjectDbContext(builder.Configuration) // Included the DbContext DI
+        .AddAppConfig(builder.Configuration) // Initializing the token variable to the Model for easy configuring secret token in API
+    .AddIdentityHandlersAndStores() // Service from the Identity Core
+    .ConfigureIdentityOption() // Customising the User Identity Validations
+    .AddIdentityAuth(builder.Configuration); // Including the token - Authenticating and Authorization
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// Using Extension Method's
+
+app.ConfigureSwaggerExplorer() // Configure the HTTP request pipeline.
+    .ConfigureCORS(builder.Configuration)   // Configure the CORS
+    .AddIdentityAuthMiddlewares();  // Added the Middleware for Authentication and Authorization
+
 
 app.UseHttpsRedirection();
-
-#region Config. CORS
-app.UseCors(options =>
-{
-    options.WithOrigins("http://localhost:4200")
-    .AllowAnyMethod()
-    .AllowAnyHeader();
-});
-#endregion
-
-app.UseAuthorization();
 
 app.MapControllers();
 
@@ -58,35 +44,11 @@ app
     .MapGroup("/api")   // Will group those api's with the prefix '/api'
     .MapIdentityApi<AppUser>();    // Mapped the identity API in the swagger
 
+app
+    .MapGroup("/api") // Mapping the prefix so that we don't need to specify each time
+    .MapIdentityUserEndpoints(); // 
 
-// Minimal API
-
-app.MapPost("/api/signup", async (
-    UserManager<AppUser> userManager,
-    [FromBody] UserRegistrationModel userRegistrationModel
-    ) =>
-    {
-        AppUser user = new AppUser()
-        {
-            UserName = userRegistrationModel.Email,
-            Email = userRegistrationModel.Email,
-            FullName = userRegistrationModel.FullName,
-        };
-
-        var result = await userManager.CreateAsync(user, userRegistrationModel.Password);
-
-        if (result.Succeeded)
-            return Results.Ok(result);
-        else
-            return Results.BadRequest(result);
-    });
 
 
 app.Run();
 
-public class UserRegistrationModel()
-{
-    public string FullName { get; set; }
-    public string Email { get; set; }
-    public string Password { get; set; }
-}
